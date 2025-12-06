@@ -2,9 +2,10 @@
 #define ORDERBOOK_H
 
 #include <map>
-#include <queue>
+#include <deque>
 #include <unordered_map>
 #include <cstdint>
+#include <chrono>
 
 enum class Side {
     BUY,
@@ -32,7 +33,6 @@ public:
     
     // Add an order to the book
     // Returns true if order was added (or partially added after matching)
-    // TODO: Decide on return type - bool, or return fill information?
     bool addOrder(uint64_t id, Side side, double price, uint64_t quantity);
     
     // Cancel an order by ID
@@ -42,28 +42,33 @@ public:
     // Print the current state of the order book
     void printBook() const;
     
-    // TODO: Consider adding helper methods:
-    //   - getBestBid() const
-    //   - getBestAsk() const
-    //   - getSpread() const
-    //   - isEmpty() const
+    // Get best bid price (highest buy price)
+    double getBestBid() const;
+    
+    // Get best ask price (lowest sell price)
+    double getBestAsk() const;
+    
+    // Get current spread (best ask - best bid)
+    double getSpread() const;
+    
+    // Check if order book is empty
+    bool isEmpty() const;
 
 private:
-    // Price level storage: price -> queue of orders at that price
+    // Price level storage: price -> deque of orders at that price
     // Bids: sorted descending (highest price first)
     // Asks: sorted ascending (lowest price first)
-    std::map<double, std::queue<Order*>> bids_;
-    std::map<double, std::queue<Order*>> asks_;
+    std::map<double, std::deque<Order*>> bids_;
+    std::map<double, std::deque<Order*>> asks_;
     
     // Fast lookup: order ID -> order pointer
     // Used for cancellation
     std::unordered_map<uint64_t, Order*> order_lookup_;
     
-    // TODO: Consider adding:
-    //   - uint64_t next_order_id_ (if auto-generating IDs)
-    //   - uint64_t current_timestamp_ (if auto-generating timestamps)
+    // Timestamp counter for order sequencing
+    uint64_t current_timestamp_;
     
-    // Helper methods (implement these as you need them)
+    // Helper methods
     
     // Match a new order against the book
     // Returns remaining quantity after matching
@@ -79,16 +84,12 @@ private:
     void addOrderToBook(Order* order);
     
     // Remove order from book (used by cancellation)
-    // Challenge: std::queue doesn't support removal from middle!
-    // Hint: You might need to change to std::deque
     bool removeOrderFromBook(Order* order);
     
     // Get best bid price (highest buy price)
-    // Returns nullptr if no bids
     double getBestBidPrice() const;
     
     // Get best ask price (lowest sell price)
-    // Returns nullptr if no asks
     double getBestAskPrice() const;
     
     // Clean up empty price levels

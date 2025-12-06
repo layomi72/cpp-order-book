@@ -11,13 +11,27 @@ add_executable(orderbook
     src/OrderBook.cpp
 )
 
+# Add benchmark executable
+add_executable(benchmark
+    src/benchmark.cpp
+    src/OrderBook.cpp
+)
+
 # Include directories
 target_include_directories(orderbook PRIVATE src)
+target_include_directories(benchmark PRIVATE src)
 
 # Compiler flags (optional, for better warnings)
 target_compile_options(orderbook PRIVATE
     -Wall
     -Wextra
     -Wpedantic
+)
+
+target_compile_options(benchmark PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+    -O3  # Optimize for performance benchmarks
 )
 

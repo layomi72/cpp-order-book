@@ -2,168 +2,332 @@
 #include <iostream>
 #include <algorithm>
 
-// TODO: Implement Side enum
-// enum class Side { BUY, SELL };
-
-// TODO: Implement Order struct
-// struct Order { ... };
-
 // Constructor
-OrderBook::OrderBook() {
-    // Initialize any member variables if needed
+OrderBook::OrderBook() : current_timestamp_(0) {
+    // Initialize timestamp counter
 }
 
-// Destructor
+// Destructor - clean up all orders
 OrderBook::~OrderBook() {
-    // TODO: Clean up all Order objects
-    // Iterate through order_lookup_ and delete all orders
-    // This prevents memory leaks
+    // Clean up all Order objects to prevent memory leaks
+    for (auto& pair : order_lookup_) {
+        delete pair.second;
+    }
 }
 
 bool OrderBook::addOrder(uint64_t id, Side side, double price, uint64_t quantity) {
-    // TODO: Step 1 - Validate inputs
-    //   - Check price > 0
-    //   - Check quantity > 0
-    //   - Check order doesn't already exist (id not in order_lookup_)
+    // Validate inputs
+    if (price <= 0.0 || quantity == 0) {
+        return false;
+    }
     
-    // TODO: Step 2 - Create new Order object
-    //   Order* order = new Order(id, side, price, quantity, ...);
-    //   Remember to set remaining_qty = quantity initially
+    // Check if order already exists
+    if (order_lookup_.find(id) != order_lookup_.end()) {
+        return false;
+    }
     
-    // TODO: Step 3 - Try to match the order first
-    //   uint64_t remaining = matchOrder(order);
-    //   Update order->remaining_qty = remaining;
+    // Create new Order object with current timestamp
+    uint64_t timestamp = current_timestamp_++;
+    Order* order = new Order(id, side, price, quantity, timestamp);
     
-    // TODO: Step 4 - If order still has remaining quantity, add to book
-    //   if (remaining > 0) {
-    //       addOrderToBook(order);
-    //       order_lookup_[id] = order;
-    //   } else {
-    //       // Order fully filled, delete it
-    //       delete order;
-    //   }
+    // Try to match the order first
+    uint64_t remaining = matchOrder(order);
+    order->remaining_qty = remaining;
     
-    // TODO: Step 5 - Return success/failure
-    return false; // Placeholder
+    // If order still has remaining quantity, add to book
+    if (remaining > 0) {
+        addOrderToBook(order);
+        order_lookup_[id] = order;
+        return true;
+    } else {
+        // Order fully filled, delete it
+        delete order;
+        return true;
+    }
 }
 
 bool OrderBook::cancelOrder(uint64_t id) {
-    // TODO: Step 1 - Look up order in order_lookup_
-    //   auto it = order_lookup_.find(id);
-    //   if (it == order_lookup_.end()) return false;
+    // Look up order in order_lookup_
+    auto it = order_lookup_.find(id);
+    if (it == order_lookup_.end()) {
+        return false;
+    }
     
-    // TODO: Step 2 - Remove order from the book
-    //   Order* order = it->second;
-    //   bool removed = removeOrderFromBook(order);
+    // Remove order from the book
+    Order* order = it->second;
+    bool removed = removeOrderFromBook(order);
     
-    // TODO: Step 3 - Remove from order_lookup_
-    //   order_lookup_.erase(it);
+    if (!removed) {
+        return false;
+    }
     
-    // TODO: Step 4 - Delete the order object
-    //   delete order;
+    // Remove from order_lookup_
+    order_lookup_.erase(it);
     
-    // TODO: Step 5 - Clean up empty price levels
-    //   cleanupEmptyLevels();
+    // Delete the order object
+    delete order;
     
-    return false; // Placeholder
+    // Clean up empty price levels
+    cleanupEmptyLevels();
+    
+    return true;
 }
 
 void OrderBook::printBook() const {
     std::cout << "=== ORDER BOOK ===" << std::endl;
     
-    // TODO: Print BIDS (buy orders)
-    //   - Iterate bids_ map in REVERSE (highest price first)
-    //   - For each price level, sum up all order quantities
-    //   - Print: Price    Total Quantity
-    
+    // Print BIDS (buy orders) - highest price first
     std::cout << "\nBIDS (Buy Orders):" << std::endl;
     std::cout << "Price\tQuantity" << std::endl;
-    // TODO: Implement iteration
-    // Hint: Use rbegin() and rend() for reverse iteration
     
+    if (bids_.empty()) {
+        std::cout << "(empty)" << std::endl;
+    } else {
+        // Iterate in reverse (highest price first)
+        for (auto it = bids_.rbegin(); it != bids_.rend(); ++it) {
+            double price = it->first;
+            uint64_t total_qty = 0;
+            
+            // Sum up all order quantities at this price level
+            for (Order* order : it->second) {
+                total_qty += order->remaining_qty;
+            }
+            
+            std::cout << price << "\t" << total_qty << std::endl;
+        }
+    }
+    
+    // Print ASKS (sell orders) - lowest price first
     std::cout << "\nASKS (Sell Orders):" << std::endl;
     std::cout << "Price\tQuantity" << std::endl;
-    // TODO: Print ASKS (sell orders)
-    //   - Iterate asks_ map in FORWARD (lowest price first)
-    //   - For each price level, sum up all order quantities
-    //   - Print: Price    Total Quantity
+    
+    if (asks_.empty()) {
+        std::cout << "(empty)" << std::endl;
+    } else {
+        // Iterate forward (lowest price first)
+        for (const auto& pair : asks_) {
+            double price = pair.first;
+            uint64_t total_qty = 0;
+            
+            // Sum up all order quantities at this price level
+            for (Order* order : pair.second) {
+                total_qty += order->remaining_qty;
+            }
+            
+            std::cout << price << "\t" << total_qty << std::endl;
+        }
+    }
     
     std::cout << "===================" << std::endl;
 }
 
-// TODO: Implement matchOrder()
-// This should call matchBuyOrder() or matchSellOrder() based on side
+double OrderBook::getBestBid() const {
+    return getBestBidPrice();
+}
+
+double OrderBook::getBestAsk() const {
+    return getBestAskPrice();
+}
+
+double OrderBook::getSpread() const {
+    double best_bid = getBestBidPrice();
+    double best_ask = getBestAskPrice();
+    
+    if (best_bid == 0.0 || best_ask == 0.0) {
+        return 0.0;
+    }
+    
+    return best_ask - best_bid;
+}
+
+bool OrderBook::isEmpty() const {
+    return bids_.empty() && asks_.empty();
+}
+
+// Match a new order against the book
 uint64_t OrderBook::matchOrder(Order* order) {
-    // TODO: Implement
-    return 0;
+    if (order->side == Side::BUY) {
+        return matchBuyOrder(order);
+    } else {
+        return matchSellOrder(order);
+    }
 }
 
-// TODO: Implement matchBuyOrder()
-// Algorithm:
-//   1. While order has remaining_qty > 0:
-//      a. Get best ask price (lowest sell price)
-//      b. If no asks OR best ask > buy price: break (no match)
-//      c. Get queue at best ask price
-//      d. While queue not empty AND order has remaining_qty:
-//         - Get front order from queue
-//         - Calculate fill quantity (min of both)
-//         - Update both orders' remaining_qty
-//         - If front order fully filled: remove from queue and delete
-//         - If front order partially filled: break (FIFO, can't skip)
-//      e. If price level empty: remove from map
+// Match a buy order against asks
 uint64_t OrderBook::matchBuyOrder(Order* order) {
-    // TODO: Implement
-    return 0;
+    uint64_t remaining = order->remaining_qty;
+    
+    while (remaining > 0) {
+        // Get best ask price (lowest sell price)
+        if (asks_.empty()) {
+            break;
+        }
+        
+        double best_ask = getBestAskPrice();
+        
+        // If best ask > buy price, no match
+        if (best_ask > order->price) {
+            break;
+        }
+        
+        // Get queue at best ask price
+        auto& ask_queue = asks_[best_ask];
+        
+        // Process orders at this price level
+        while (!ask_queue.empty() && remaining > 0) {
+            Order* ask_order = ask_queue.front();
+            
+            // Calculate fill quantity (min of both)
+            uint64_t fill_qty = std::min(remaining, ask_order->remaining_qty);
+            
+            // Update both orders' remaining_qty
+            remaining -= fill_qty;
+            ask_order->remaining_qty -= fill_qty;
+            
+            // If ask order fully filled: remove from queue and delete
+            if (ask_order->remaining_qty == 0) {
+                ask_queue.pop_front();
+                order_lookup_.erase(ask_order->id);
+                delete ask_order;
+            } else {
+                // If ask order partially filled: break (FIFO, can't skip)
+                break;
+            }
+        }
+        
+        // If price level empty: remove from map
+        if (ask_queue.empty()) {
+            asks_.erase(best_ask);
+        }
+    }
+    
+    return remaining;
 }
 
-// TODO: Implement matchSellOrder()
-// Similar to matchBuyOrder but:
-//   - Check best bid (highest buy price)
-//   - Match if best bid >= sell price
+// Match a sell order against bids
 uint64_t OrderBook::matchSellOrder(Order* order) {
-    // TODO: Implement
-    return 0;
+    uint64_t remaining = order->remaining_qty;
+    
+    while (remaining > 0) {
+        // Get best bid price (highest buy price)
+        if (bids_.empty()) {
+            break;
+        }
+        
+        double best_bid = getBestBidPrice();
+        
+        // If best bid < sell price, no match
+        if (best_bid < order->price) {
+            break;
+        }
+        
+        // Get queue at best bid price
+        auto& bid_queue = bids_[best_bid];
+        
+        // Process orders at this price level
+        while (!bid_queue.empty() && remaining > 0) {
+            Order* bid_order = bid_queue.front();
+            
+            // Calculate fill quantity (min of both)
+            uint64_t fill_qty = std::min(remaining, bid_order->remaining_qty);
+            
+            // Update both orders' remaining_qty
+            remaining -= fill_qty;
+            bid_order->remaining_qty -= fill_qty;
+            
+            // If bid order fully filled: remove from queue and delete
+            if (bid_order->remaining_qty == 0) {
+                bid_queue.pop_front();
+                order_lookup_.erase(bid_order->id);
+                delete bid_order;
+            } else {
+                // If bid order partially filled: break (FIFO, can't skip)
+                break;
+            }
+        }
+        
+        // If price level empty: remove from map
+        if (bid_queue.empty()) {
+            bids_.erase(best_bid);
+        }
+    }
+    
+    return remaining;
 }
 
-// TODO: Implement addOrderToBook()
-// Algorithm:
-//   1. Choose bids_ or asks_ based on order->side
-//   2. Check if price level exists
-//   3. If exists: push order to existing queue
-//   4. If not: create new queue and add to map
+// Add order to appropriate side (bids or asks)
 void OrderBook::addOrderToBook(Order* order) {
-    // TODO: Implement
+    if (order->side == Side::BUY) {
+        // Add to bids map
+        bids_[order->price].push_back(order);
+    } else {
+        // Add to asks map
+        asks_[order->price].push_back(order);
+    }
 }
 
-// TODO: Implement removeOrderFromBook()
-// Challenge: std::queue doesn't support removal from middle!
-// Solutions:
-//   Option A: Change to std::deque, iterate to find and erase
-//   Option B: Mark as cancelled, skip during matching (lazy deletion)
-//   Option C: Rebuild queue without cancelled order
-// 
-// Recommended: Option A - change queue to deque
+// Remove order from book (used by cancellation)
 bool OrderBook::removeOrderFromBook(Order* order) {
-    // TODO: Implement
+    if (order->side == Side::BUY) {
+        auto it = bids_.find(order->price);
+        if (it != bids_.end()) {
+            auto& deque = it->second;
+            // Find and remove the order from deque
+            auto deque_it = std::find(deque.begin(), deque.end(), order);
+            if (deque_it != deque.end()) {
+                deque.erase(deque_it);
+                return true;
+            }
+        }
+    } else {
+        auto it = asks_.find(order->price);
+        if (it != asks_.end()) {
+            auto& deque = it->second;
+            // Find and remove the order from deque
+            auto deque_it = std::find(deque.begin(), deque.end(), order);
+            if (deque_it != deque.end()) {
+                deque.erase(deque_it);
+                return true;
+            }
+        }
+    }
+    
     return false;
 }
 
 double OrderBook::getBestBidPrice() const {
-    // TODO: Return highest bid price
-    // If bids_ empty, return 0.0 or use optional
-    if (bids_.empty()) return 0.0;
-    return bids_.rbegin()->first; // Reverse iterator gives highest
+    if (bids_.empty()) {
+        return 0.0;
+    }
+    // Reverse iterator gives highest price
+    return bids_.rbegin()->first;
 }
 
 double OrderBook::getBestAskPrice() const {
-    // TODO: Return lowest ask price
-    // If asks_ empty, return 0.0 or use optional
-    if (asks_.empty()) return 0.0;
-    return asks_.begin()->first; // Forward iterator gives lowest
+    if (asks_.empty()) {
+        return 0.0;
+    }
+    // Forward iterator gives lowest price
+    return asks_.begin()->first;
 }
 
 void OrderBook::cleanupEmptyLevels() {
-    // TODO: Remove any price levels that have empty queues
-    // Iterate through bids_ and asks_, remove entries where queue is empty
+    // Remove any price levels that have empty deques
+    auto bid_it = bids_.begin();
+    while (bid_it != bids_.end()) {
+        if (bid_it->second.empty()) {
+            bid_it = bids_.erase(bid_it);
+        } else {
+            ++bid_it;
+        }
+    }
+    
+    auto ask_it = asks_.begin();
+    while (ask_it != asks_.end()) {
+        if (ask_it->second.empty()) {
+            ask_it = asks_.erase(ask_it);
+        } else {
+            ++ask_it;
+        }
+    }
 }
-
